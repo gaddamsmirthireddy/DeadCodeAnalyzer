@@ -1,0 +1,1 @@
+"""Git history utilities placeholder."""

@@ -1,0 +1,1 @@
+"""Worktree management placeholder."""
