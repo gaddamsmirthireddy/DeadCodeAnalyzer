@@ -1,13 +1,23 @@
-from pydantic import BaseModel
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
 
 
 class EvidenceCreate(BaseModel):
-    candidate_id: str
+    candidate_id: int
     file_path: str
     line_number: int | None = None
     snippet: str
     kind: str = "static"
 
 
-class EvidenceOut(EvidenceCreate):
-    id: str | None = None
+class EvidenceResponse(BaseModel):
+    id: int
+    candidate_id: int
+    file_path: str
+    line_number: int | None
+    snippet: str
+    kind: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

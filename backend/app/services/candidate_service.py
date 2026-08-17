@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.models.candidate import Candidate
 from app.schemas.candidate import CandidateCreate
+from sqlalchemy import select
 
 
 def create_candidate(
@@ -27,3 +28,25 @@ def get_candidate(
     candidate_id: int,
 ) -> Candidate | None:
     return db.get(Candidate, candidate_id)
+
+def list_candidates(
+    db: Session,
+) -> list[Candidate]:
+    statement = select(Candidate).order_by(Candidate.id)
+
+    return list(db.scalars(statement).all())
+
+
+def delete_candidate(
+    db: Session,
+    candidate_id: int,
+) -> bool:
+    candidate = db.get(Candidate, candidate_id)
+
+    if candidate is None:
+        return False
+
+    db.delete(candidate)
+    db.commit()
+
+    return True

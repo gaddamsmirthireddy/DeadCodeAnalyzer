@@ -3,7 +3,13 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.schemas.candidate import CandidateCreate, CandidateResponse
-from app.services.candidate_service import create_candidate, get_candidate
+from app.services.candidate_service import (
+    create_candidate,
+    delete_candidate,
+    get_candidate,
+    list_candidates,
+)
+
 
 
 router = APIRouter(
@@ -34,3 +40,35 @@ def get_candidate_endpoint(
         )
 
     return candidate
+
+@router.get(
+    "",
+    response_model=list[CandidateResponse],
+)
+def list_candidates_endpoint(
+    db: Session = Depends(get_db),
+) -> list[CandidateResponse]:
+    return list_candidates(db)
+
+
+@router.delete(
+    "/{candidate_id}",
+)
+def delete_candidate_endpoint(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    deleted = delete_candidate(
+        db,
+        candidate_id,
+    )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="Candidate not found",
+        )
+
+    return {
+        "message": "Candidate deleted successfully",
+    }

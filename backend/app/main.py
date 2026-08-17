@@ -2,6 +2,8 @@ from fastapi import FastAPI
 
 from app.api.v1.candidates import router as candidates_router
 from app.api.v1.repositories import router as repositories_router
+from app.api.v1.investigations import router as investigations_router
+from app.api.v1.evidence import router as evidence_router
 
 
 app = FastAPI(
@@ -21,6 +23,15 @@ app.include_router(
     prefix="/api/v1",
 )
 
+app.include_router(
+    investigations_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    evidence_router,
+    prefix="/api/v1",
+)
 
 @app.get("/health")
 def health_check():
