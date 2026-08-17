@@ -1,12 +1,21 @@
-from pydantic import BaseModel
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
 
 
 class CandidateCreate(BaseModel):
-    repository_id: str
+    investigation_id: int
     symbol: str
     reason: str
     confidence: float = 0.0
 
 
-class CandidateOut(CandidateCreate):
-    id: str | None = None
+class CandidateResponse(BaseModel):
+    id: int
+    investigation_id: int
+    symbol: str
+    reason: str
+    confidence: float
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

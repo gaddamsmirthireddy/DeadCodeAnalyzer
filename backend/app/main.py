@@ -1,8 +1,30 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="DeadCodeAnalyzer")
+from app.api.v1.candidates import router as candidates_router
+from app.api.v1.repositories import router as repositories_router
+
+
+app = FastAPI(
+    title="CodeArchaeologist",
+    description="AI-powered software archaeology and safe code deletion intelligence",
+    version="0.1.0",
+)
+
+
+app.include_router(
+    repositories_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    candidates_router,
+    prefix="/api/v1",
+)
 
 
 @app.get("/health")
-def health_check() -> dict[str, str]:
-    return {"status": "ok"}
+def health_check():
+    return {
+        "status": "healthy",
+        "service": "CodeArchaeologist",
+    }

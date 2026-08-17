@@ -1,11 +1,17 @@
-from pydantic import BaseModel
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
 
 
 class RepositoryCreate(BaseModel):
     name: str
-    url: str
-    branch: str = "main"
+    path: str
 
 
-class RepositoryOut(RepositoryCreate):
-    id: str | None = None
+class RepositoryResponse(BaseModel):
+    id: int
+    name: str
+    path: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
