@@ -293,6 +293,7 @@ def resolve_reference_name(
         # create_user()
         if (
             imported.alias is None
+            and imported.name is not None
             and imported.name == reference.name
         ):
             return imported.name

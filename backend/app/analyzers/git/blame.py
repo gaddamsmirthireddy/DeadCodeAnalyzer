@@ -46,28 +46,42 @@ def get_line_blame(
         return None
 
     try:
-        blames = repo.blame("HEAD", git_path)
+        raw_blames = repo.blame("HEAD", git_path)
+        if not raw_blames:
+            return None
 
         current_line = 1
-        for commit, lines in blames:
+        for entry in raw_blames:  # type: ignore[union-attr]
+            if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                continue
+            commit = entry[0]
+            lines = entry[1]
+            if not isinstance(lines, (list, tuple)):
+                continue
             count = len(lines)
             if current_line <= line_number < current_line + count:
+                date_val = getattr(commit, "committed_date", 0)
                 committed_date = datetime.fromtimestamp(
-                    commit.committed_date, tz=timezone.utc
+                    date_val, tz=timezone.utc
                 )
-                summary = (
-                    commit.message.strip().split("\n")[0]
-                    if commit.message
-                    else ""
-                )
+                raw_message = getattr(commit, "message", "")
+                if isinstance(raw_message, bytes):
+                    msg_text = raw_message.decode("utf-8", errors="replace")
+                elif isinstance(raw_message, str):
+                    msg_text = raw_message
+                else:
+                    msg_text = str(raw_message)
+
+                summary = msg_text.strip().split("\n")[0] if msg_text else ""
+                author_obj = getattr(commit, "author", None)
+                author_name = getattr(author_obj, "name", None) or "Unknown"
+                author_email = getattr(author_obj, "email", None) or ""
+                commit_hash = getattr(commit, "hexsha", "") or ""
+
                 return LineBlameInfo(
-                    commit_hash=commit.hexsha,
-                    author=(
-                        commit.author.name if commit.author else "Unknown"
-                    ),
-                    author_email=(
-                        commit.author.email if commit.author else ""
-                    ),
+                    commit_hash=commit_hash,
+                    author=author_name,
+                    author_email=author_email,
                     committed_date=committed_date,
                     summary=summary,
                     line_number=line_number,

@@ -13,12 +13,9 @@ from app.services.investigation_service import (
 )
 
 FIXTURE_REPOSITORY = (
-    Path(__file__).resolve().parent.parent.parent
-    / "app"
-    / "analyzers"
-    / "tests"
+    Path(__file__).resolve().parent.parent
     / "fixtures"
-    / "static_repo"
+    / "Static_repo"
 )
 
 

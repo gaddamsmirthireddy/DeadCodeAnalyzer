@@ -61,19 +61,26 @@ def get_file_git_history(
             {c.author.name for c in commits if c.author and c.author.name}
         )
 
-        first_line_message = (
-            last_commit.message.strip().split("\n")[0]
-            if last_commit.message
-            else ""
+        raw_msg = getattr(last_commit, "message", "")
+        if isinstance(raw_msg, bytes):
+            msg_text = raw_msg.decode("utf-8", errors="replace")
+        elif isinstance(raw_msg, str):
+            msg_text = raw_msg
+        else:
+            msg_text = str(raw_msg)
+        first_line_message = msg_text.strip().split("\n")[0] if msg_text else ""
+
+        author_name = (
+            last_commit.author.name
+            if (last_commit.author and last_commit.author.name)
+            else "Unknown"
         )
 
         return FileGitHistory(
             commit_count=len(commits),
             last_commit_hash=last_commit.hexsha,
             last_commit_date=commit_date,
-            last_commit_author=(
-                last_commit.author.name if last_commit.author else "Unknown"
-            ),
+            last_commit_author=author_name,
             last_commit_message=first_line_message,
             age_in_days=age_in_days,
             authors=authors,
