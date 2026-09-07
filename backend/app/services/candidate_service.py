@@ -1,8 +1,8 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.candidate import Candidate
 from app.schemas.candidate import CandidateCreate
-from sqlalchemy import select
 
 
 def create_candidate(

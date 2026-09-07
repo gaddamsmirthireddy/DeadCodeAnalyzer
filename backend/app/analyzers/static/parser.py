@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from tree_sitter import Language, Parser
 import tree_sitter_python
-
+from tree_sitter import Language, Parser
 
 PYTHON_LANGUAGE = Language(tree_sitter_python.language())
 

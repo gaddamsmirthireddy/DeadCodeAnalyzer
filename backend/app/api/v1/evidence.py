@@ -10,7 +10,6 @@ from app.services.evidence_service import (
     list_evidence,
 )
 
-
 router = APIRouter(
     prefix="/evidence",
     tags=["evidence"],

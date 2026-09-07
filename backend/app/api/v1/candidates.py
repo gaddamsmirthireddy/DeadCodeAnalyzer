@@ -10,8 +10,6 @@ from app.services.candidate_service import (
     list_candidates,
 )
 
-
-
 router = APIRouter(
     prefix="/candidates",
     tags=["candidates"],

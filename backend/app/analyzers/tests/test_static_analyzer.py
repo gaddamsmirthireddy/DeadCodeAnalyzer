@@ -1,14 +1,13 @@
 from pathlib import Path
 
 from app.analyzers.static.analyzer import analyze_static
-from app.analyzers.static.parser import parse_file
-from app.analyzers.static.symbols import extract_symbols
 from app.analyzers.static.dependencies import (
     extract_imports,
     extract_references,
     resolve_module_reference,
 )
-
+from app.analyzers.static.parser import parse_file
+from app.analyzers.static.symbols import extract_symbols
 
 FIXTURE_REPOSITORY = (
     Path(__file__).parent

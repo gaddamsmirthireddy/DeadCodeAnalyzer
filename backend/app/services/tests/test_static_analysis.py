@@ -8,7 +8,6 @@ from app.models.investigation import Investigation
 from app.models.repository import Repository
 from app.services.static_analysis import save_static_analysis
 
-
 FIXTURE_REPOSITORY = (
     "app/analyzers/tests/fixtures/static_repo"
 )

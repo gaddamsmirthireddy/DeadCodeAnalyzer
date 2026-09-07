@@ -10,7 +10,6 @@ from app.services.repository_service import (
     list_repositories,
 )
 
-
 router = APIRouter(
     prefix="/repositories",
     tags=["repositories"],

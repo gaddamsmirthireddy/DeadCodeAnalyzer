@@ -1,10 +1,9 @@
 from fastapi import FastAPI
 
 from app.api.v1.candidates import router as candidates_router
-from app.api.v1.repositories import router as repositories_router
-from app.api.v1.investigations import router as investigations_router
 from app.api.v1.evidence import router as evidence_router
-
+from app.api.v1.investigations import router as investigations_router
+from app.api.v1.repositories import router as repositories_router
 
 app = FastAPI(
     title="CodeArchaeologist",
