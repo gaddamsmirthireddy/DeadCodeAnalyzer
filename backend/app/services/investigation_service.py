@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.analyzers.git.analyzer import analyze_git
 from app.analyzers.runtime.analyzer import analyze_runtime
 from app.analyzers.static.analyzer import analyze_static
+from app.analyzers.test.analyzer import analyze_test
 from app.models.candidate import Candidate
 from app.models.evidence import Evidence
 from app.models.investigation import Investigation
@@ -104,6 +105,9 @@ def run_investigation(
         # Phase 4: Runtime Execution Analysis
         candidates = analyze_runtime(repo_path, candidates)
 
+         # Phase 5: Test Reference Analysis
+        candidates = analyze_test(repo_path, candidates)
+
         save_static_analysis(
             db=db,
             investigation_id=investigation.id,
@@ -115,7 +119,9 @@ def run_investigation(
             analyzers.append("Git")
         if any(any(ev.kind == "runtime" for ev in c.evidence) for c in candidates):
             analyzers.append("Runtime")
-
+        if any(any(ev.kind == "test" for ev in c.evidence) for c in candidates):
+            analyzers.append("Test")
+        
         if len(analyzers) == 1:
             mode = analyzers[0]
         elif len(analyzers) == 2:
@@ -202,4 +208,4 @@ def get_investigation_results(
         created_at=investigation.created_at,
         candidate_count=len(candidates),
         candidates=candidate_results,
-    )
+    )

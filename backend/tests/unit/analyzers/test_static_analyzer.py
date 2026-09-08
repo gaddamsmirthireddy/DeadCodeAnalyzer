@@ -145,3 +145,42 @@ class TestStaticEvidenceGeneration:
         assert "delete_user" in delete_user.reason
         assert "no detected references" in delete_user.reason
         assert delete_user.confidence == 0.70
+
+
+def test_test_only_reference_remains_candidate(tmp_path):
+    users_file = tmp_path / "users.py"
+
+    users_file.write_text(
+        """
+def delete_user():
+    pass
+""",
+        encoding="utf-8",
+    )
+
+    test_file = tmp_path / "test_users.py"
+
+    test_file.write_text(
+        """
+from users import delete_user
+
+
+def test_delete_user():
+    delete_user()
+""",
+        encoding="utf-8",
+    )
+
+    candidates = analyze_static(tmp_path)
+
+    symbols = [
+        candidate.symbol
+        for candidate in candidates
+    ]
+
+    # Symbol has no production references, so it remains a candidate
+    # for the Test Analyzer to investigate
+    assert "users.py:delete_user" in symbols
+
+    cand = next(c for c in candidates if c.symbol == "users.py:delete_user")
+    assert "referenced only by tests" in cand.reason

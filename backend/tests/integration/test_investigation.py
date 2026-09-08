@@ -1,4 +1,8 @@
 from pathlib import Path
+from app.models.evidence import Evidence
+import json
+import git
+
 
 import pytest
 from fastapi.testclient import TestClient
@@ -282,5 +286,146 @@ def test_investigation_with_runtime_and_git_traces_persists_multi_evidence(
     # Zombie code confidence boosted
     assert zombie_cand.confidence >= 0.70
 
+def test_investigation_with_test_analyzer_persists_test_evidence(db_session, tmp_path):
+    # 1. Setup production code with an unused function
+    users_file = tmp_path / "users.py"
+    users_file.write_text(
+        "def delete_user():\n    pass\n",
+        encoding="utf-8",
+    )
+    # 2. Setup test file that references delete_user
+    test_file = tmp_path / "test_users.py"
+    test_file.write_text(
+        "from users import delete_user\n\ndef test_delete_user():\n    delete_user()\n",
+        encoding="utf-8",
+    )
+    # 3. Register repository and investigation in PostgreSQL
+    repo = Repository(
+        name="test-evidence-db-repo",
+        path=str(tmp_path),
+    )
+    db_session.add(repo)
+    db_session.commit()
+    db_session.refresh(repo)
+    investigation = Investigation(
+        repository_id=repo.id,
+        status="queued",
+    )
+    db_session.add(investigation)
+    db_session.commit()
+    db_session.refresh(investigation)
+    # 4. Run the investigation pipeline (Static -> Git -> Runtime -> Test -> DB)
+    completed_inv = run_investigation(db_session, investigation.id)
+    assert completed_inv.status == "completed"
+    assert "Test" in completed_inv.summary
+    # 5. Fetch results via API service layer
+    results = get_investigation_results(db_session, investigation.id)
+    assert results is not None
+    assert results.candidate_count == 1
+    candidate = results.candidates[0]
+    assert candidate.symbol == "users.py:delete_user"
+    assert "TEST-ONLY ZOMBIE" in candidate.reason
+    # Verify both definition and test evidence are present in response
+    kinds = [ev.kind for ev in candidate.evidence]
+    assert "definition" in kinds
+    assert "test" in kinds
+    # 6. Directly query the PostgreSQL database to confirm test evidence persisted
+    db_evidence_records = (
+        db_session.query(Evidence)
+        .filter(Evidence.candidate_id == candidate.id)
+        .all()
+    )
+    db_kinds = {e.kind for e in db_evidence_records}
+    assert "test" in db_kinds
+    test_record = next(e for e in db_evidence_records if e.kind == "test")
+    assert test_record.file_path == "test_users.py"
+    assert test_record.line_number == 4
+    assert "test_delete_user" in test_record.snippet
 
+def test_investigation_full_four_layer_multi_evidence_lifecycle(db_session, tmp_path):
+    # 1. Initialize Git repository
+    repo_git = git.Repo.init(tmp_path)
+    with repo_git.config_writer() as cfg:
+        cfg.set_value("user", "name", "Archaeologist")
+        cfg.set_value("user", "email", "archaeologist@example.com")
+    # 2. Setup production code with active and dead symbols
+    billing_code = (
+        "def create_invoice():\n"
+        "    return 'Invoice #1'\n\n"
+        "def legacy_tax_calculator():\n"
+        "    return 0.15\n"
+    )
+    (tmp_path / "billing.py").write_text(billing_code, encoding="utf-8")
+    app_code = (
+        "from billing import create_invoice\n\n"
+        "def main():\n"
+        "    return create_invoice()\n"
+    )
+    (tmp_path / "app.py").write_text(app_code, encoding="utf-8")
+    # 3. Setup test suite with mock patch targeting legacy_tax_calculator
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    test_code = (
+        "from unittest.mock import patch\n\n"
+        "@patch('billing.legacy_tax_calculator')\n"
+        "def test_invoice_generation(mock_tax):\n"
+        "    pass\n"
+    )
+    (tests_dir / "test_billing.py").write_text(test_code, encoding="utf-8")
+    # Commit all files to Git (Phase 3 evidence)
+    repo_git.index.add(["billing.py", "app.py", "tests/test_billing.py"])
+    repo_git.index.commit("feat: initial billing and test suite")
+    # 4. Setup runtime traces (Phase 4 evidence: active billing called, legacy tax has 0 hits)
+    trace_data = {
+        "executed_lines": {
+            "billing.py": [1, 2],
+            "app.py": [1, 3, 4],
+        },
+        "call_counts": {
+            "billing.py:create_invoice": 15,
+            "billing.py:legacy_tax_calculator": 0,
+        },
+    }
+    (tmp_path / "runtime_trace.json").write_text(
+        json.dumps(trace_data), encoding="utf-8"
+    )
+    # 5. Register repository & investigation in PostgreSQL
+    repo = Repository(
+        name="four-layer-multi-evidence-repo",
+        path=str(tmp_path),
+    )
+    db_session.add(repo)
+    db_session.commit()
+    db_session.refresh(repo)
+    investigation = Investigation(
+        repository_id=repo.id,
+        status="queued",
+    )
+    db_session.add(investigation)
+    db_session.commit()
+    db_session.refresh(investigation)
+    # 6. Execute full 4-layer investigation
+    completed_inv = run_investigation(db_session, investigation.id)
+    assert completed_inv.status == "completed"
+    assert "Static, Git, Runtime & Test analysis completed" in str(completed_inv.summary)
+    # 7. Fetch results via API service layer
+    results = get_investigation_results(db_session, investigation.id)
+    assert results is not None
+    candidates_by_symbol = {c.symbol: c for c in results.candidates}
+    # create_invoice should NOT be a candidate (active static production reference)
+    assert "billing.py:create_invoice" not in candidates_by_symbol
+    # legacy_tax_calculator is a dead candidate with ALL 4 evidence kinds!
+    assert "billing.py:legacy_tax_calculator" in candidates_by_symbol
+    cand = candidates_by_symbol["billing.py:legacy_tax_calculator"]
+    evidence_kinds = {e.kind for e in cand.evidence}
+    assert evidence_kinds == {"definition", "git", "runtime", "test"}
+    assert "MOCK CLEANUP REQUIRED" in cand.reason
+    # 8. Directly verify PostgreSQL database rows
+    persisted_evidence = (
+        db_session.query(Evidence)
+        .filter(Evidence.candidate_id == cand.id)
+        .all()
+    )
+    persisted_kinds = {e.kind for e in persisted_evidence}
+    assert persisted_kinds == {"definition", "git", "runtime", "test"}
 

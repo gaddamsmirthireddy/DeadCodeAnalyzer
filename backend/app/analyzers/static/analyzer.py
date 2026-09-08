@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.analyzers.test.scanner import is_test_file
+
 from app.analyzers.static.dependencies import (
     Reference,
     extract_imports,
@@ -39,8 +41,13 @@ def analyze_static(
     """
     Find potentially unused Python functions and classes.
 
-    Every candidate contains evidence pointing to the
-    definition of the potentially unused symbol.
+    Production references and test references are tracked
+    separately.
+
+    A symbol is considered used only when it has a production
+    reference. A symbol referenced only by tests remains a
+    candidate so that the Test Analyzer can investigate it
+    further.
     """
 
     repository_path = Path(repository_path)
@@ -73,7 +80,8 @@ def analyze_static(
     # Step 2: Resolve references to exact symbols
     # ---------------------------------------------------------
 
-    referenced_symbols: set[str] = set()
+    production_referenced_symbols: set[str] = set()
+    test_referenced_symbols: set[str] = set()
 
     for reference in all_references:
 
@@ -96,15 +104,27 @@ def analyze_static(
             f"{relative_path}:{resolved_symbol.name}"
         )
 
-        referenced_symbols.add(symbol_identity)
+        # -----------------------------------------------------
+        # Separate production references from test references
+        # -----------------------------------------------------
+
+        if is_test_file(
+            reference.file_path,
+            repository_path,
+        ):
+            test_referenced_symbols.add(symbol_identity)
+        else:
+            production_referenced_symbols.add(symbol_identity)
 
     # ---------------------------------------------------------
-    # Step 3: Find unreferenced symbols
+    # Step 3: Find symbols with no production references
     # ---------------------------------------------------------
 
     candidates: list[CandidateResult] = []
 
     for symbol in all_symbols:
+        if is_test_file(symbol.file_path, repository_path):
+            continue
 
         relative_path = (
             symbol.file_path.relative_to(
@@ -116,7 +136,12 @@ def analyze_static(
             f"{relative_path}:{symbol.name}"
         )
 
-        if symbol_identity in referenced_symbols:
+        # -----------------------------------------------------
+        # If production code references this symbol,
+        # it is currently considered used.
+        # -----------------------------------------------------
+
+        if symbol_identity in production_referenced_symbols:
             continue
 
         # -----------------------------------------------------
@@ -129,19 +154,29 @@ def analyze_static(
             repository_path=repository_path,
         )
 
+        # -----------------------------------------------------
+        # Step 5: Build candidate reason
+        # -----------------------------------------------------
+
+        reason = (
+            f"{symbol.kind.capitalize()} "
+            f"'{symbol.name}' in "
+            f"'{relative_path}' has no detected references "
+            "from production code."
+    )
+
+        if symbol_identity in test_referenced_symbols:
+            reason += " It is referenced only by tests."
+
+        # -----------------------------------------------------
+        # Step 6: Create candidate
+        # -----------------------------------------------------
+
         candidates.append(
             CandidateResult(
                 symbol=symbol_identity,
-
-                reason=(
-                    f"{symbol.kind.capitalize()} "
-                    f"'{symbol.name}' in "
-                    f"'{relative_path}' has no detected "
-                    "references in the repository."
-                ),
-
+                reason=reason,
                 confidence=0.70,
-
                 evidence=[evidence],
             )
         )
