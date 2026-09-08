@@ -9,6 +9,7 @@ from app.analyzers.runtime.analyzer import analyze_runtime
 from app.analyzers.static.analyzer import analyze_static
 from app.analyzers.test.analyzer import analyze_test
 from app.models.candidate import Candidate
+from app.ai.agents.semantic_agent import analyze_semantics
 from app.models.evidence import Evidence
 from app.models.investigation import Investigation
 from app.models.repository import Repository
@@ -108,6 +109,9 @@ def run_investigation(
          # Phase 5: Test Reference Analysis
         candidates = analyze_test(repo_path, candidates)
 
+         # Phase 6: AI Semantic Analysis & RAG
+        candidates = analyze_semantics(repo_path, candidates)
+
         save_static_analysis(
             db=db,
             investigation_id=investigation.id,
@@ -121,6 +125,8 @@ def run_investigation(
             analyzers.append("Runtime")
         if any(any(ev.kind == "test" for ev in c.evidence) for c in candidates):
             analyzers.append("Test")
+        if any(any(ev.kind == "semantic" for ev in c.evidence) for c in candidates):
+            analyzers.append("Semantic")
         
         if len(analyzers) == 1:
             mode = analyzers[0]

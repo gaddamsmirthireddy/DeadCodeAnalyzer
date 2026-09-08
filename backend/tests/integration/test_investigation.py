@@ -59,7 +59,7 @@ def test_run_investigation_service_lifecycle(db_session):
     completed_inv = run_investigation(db_session, investigation.id)
 
     assert completed_inv.status == "completed"
-    assert "Static analysis completed" in completed_inv.summary
+    assert "analysis completed" in completed_inv.summary
     assert "candidate(s)" in completed_inv.summary
 
     # 4. Fetch results
@@ -265,7 +265,8 @@ def test_investigation_with_runtime_and_git_traces_persists_multi_evidence(
     # 4. Run investigation
     completed_inv = run_investigation(db_session, investigation.id)
     assert completed_inv.status == "completed"
-    assert "Static, Git & Runtime analysis completed" in completed_inv.summary
+    assert "Runtime" in completed_inv.summary
+    assert "analysis completed" in completed_inv.summary
 
     # 5. Verify results endpoint payload
     results = get_investigation_results(db_session, investigation.id)
@@ -407,7 +408,8 @@ def test_investigation_full_four_layer_multi_evidence_lifecycle(db_session, tmp_
     # 6. Execute full 4-layer investigation
     completed_inv = run_investigation(db_session, investigation.id)
     assert completed_inv.status == "completed"
-    assert "Static, Git, Runtime & Test analysis completed" in str(completed_inv.summary)
+    assert "Static, Git, Runtime, Test" in str(completed_inv.summary)
+    assert "analysis completed" in str(completed_inv.summary)
     # 7. Fetch results via API service layer
     results = get_investigation_results(db_session, investigation.id)
     assert results is not None
@@ -429,3 +431,117 @@ def test_investigation_full_four_layer_multi_evidence_lifecycle(db_session, tmp_
     persisted_kinds = {e.kind for e in persisted_evidence}
     assert persisted_kinds == {"definition", "git", "runtime", "test"}
 
+def test_investigation_full_five_layer_multi_evidence_lifecycle(db_session, tmp_path):
+    """
+    Phase 6 Comprehensive Integration Test:
+    Verifies that an investigation orchestrates ALL 5 evidence layers:
+    1. Static definition (Phase 1)
+    2. Git history & blame (Phase 3)
+    3. Runtime coverage traces (Phase 4)
+    4. Test mock / patch references (Phase 5)
+    5. AI semantic archaeology & superseded detection (Phase 6)
+    And persists all 5 kinds into PostgreSQL.
+    """
+    import json
+    import git
+
+    # 1. Initialize Git repo
+    repo_git = git.Repo.init(tmp_path)
+    with repo_git.config_writer() as cfg:
+        cfg.set_value("user", "name", "Senior Archaeologist")
+        cfg.set_value("user", "email", "archaeologist@codearchaeologist.ai")
+
+    # 2. Setup production code:
+    # - legacy_tax_calculator: unreferenced, dead code
+    # - smart_tax_calculator: active replacement function
+    billing_code = (
+        "def smart_tax_calculator(order):\n"
+        "    return order.amount * 0.15\n\n"
+        "def legacy_tax_calculator():\n"
+        "    return 0.15\n"
+    )
+    (tmp_path / "billing.py").write_text(billing_code, encoding="utf-8")
+
+    app_code = (
+        "from billing import smart_tax_calculator\n\n"
+        "def process_order(order):\n"
+        "    return smart_tax_calculator(order)\n"
+    )
+    (tmp_path / "app.py").write_text(app_code, encoding="utf-8")
+
+    # 3. Setup test suite referencing legacy_tax_calculator via mock patch
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    test_code = (
+        "from unittest.mock import patch\n\n"
+        "@patch('billing.legacy_tax_calculator')\n"
+        "def test_order_taxes(mock_tax):\n"
+        "    pass\n"
+    )
+    (tests_dir / "test_billing.py").write_text(test_code, encoding="utf-8")
+
+    repo_git.index.add(["billing.py", "app.py", "tests/test_billing.py"])
+    repo_git.index.commit("feat: implement billing and obsolete test patch")
+
+    # 4. Setup runtime traces (smart_tax_calculator called 50 times, legacy has 0 hits)
+    trace_data = {
+        "executed_lines": {
+            "billing.py": [1, 2],
+            "app.py": [1, 3, 4],
+        },
+        "call_counts": {
+            "billing.py:smart_tax_calculator": 50,
+            "billing.py:legacy_tax_calculator": 0,
+        },
+    }
+    (tmp_path / "runtime_trace.json").write_text(
+        json.dumps(trace_data), encoding="utf-8"
+    )
+
+    # 5. Register in PostgreSQL
+    repo = Repository(
+        name="five-layer-multi-evidence-repo",
+        path=str(tmp_path),
+    )
+    db_session.add(repo)
+    db_session.commit()
+    db_session.refresh(repo)
+
+    investigation = Investigation(
+        repository_id=repo.id,
+        status="queued",
+    )
+    db_session.add(investigation)
+    db_session.commit()
+    db_session.refresh(investigation)
+
+    # 6. Execute 5-layer investigation pipeline
+    completed_inv = run_investigation(db_session, investigation.id)
+    assert completed_inv.status == "completed"
+    assert "Static, Git, Runtime, Test & Semantic analysis completed" in completed_inv.summary
+
+    # 7. Fetch results via API service layer
+    results = get_investigation_results(db_session, investigation.id)
+    assert results is not None
+    candidates_by_symbol = {c.symbol: c for c in results.candidates}
+
+    # smart_tax_calculator is active production code - must NOT be flagged
+    assert "billing.py:smart_tax_calculator" not in candidates_by_symbol
+
+    # legacy_tax_calculator must have ALL 5 evidence kinds
+    assert "billing.py:legacy_tax_calculator" in candidates_by_symbol
+    candidate = candidates_by_symbol["billing.py:legacy_tax_calculator"]
+
+    evidence_kinds = {e.kind for e in candidate.evidence}
+    assert evidence_kinds == {"definition", "git", "runtime", "test", "semantic"}
+    assert "SUPERSEDED" in candidate.reason
+    assert "smart_tax_calculator" in candidate.reason
+
+    # 8. Directly verify PostgreSQL database rows
+    persisted_evidence = (
+        db_session.query(Evidence)
+        .filter(Evidence.candidate_id == candidate.id)
+        .all()
+    )
+    persisted_kinds = {e.kind for e in persisted_evidence}
+    assert persisted_kinds == {"definition", "git", "runtime", "test", "semantic"}
